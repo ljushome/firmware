@@ -17,6 +17,7 @@
 #include <ESPmDNS.h>
 /** Build time */
 const char compileDate[] = __DATE__ " " __TIME__;
+const byte relay_gpio = 4;
 
 /** Unique device name */
 char apName[] = "ljus-xxxxxxxxxxxx";
@@ -32,6 +33,7 @@ volatile bool isConnected = false;
 /** Connection change status */
 bool connStatusChanged = false;
 bool ledOn = false;
+bool btSerialOn = false;
 /**
    Create unique device name from MAC address
  **/
@@ -70,6 +72,7 @@ StaticJsonDocument<200> jsonBuffer;
         false if error occured
 */
 bool initBTSerial() {
+  btSerialOn = true;
   if (!SerialBT.begin(apName)) {
     Serial.println("Failed to start BTSerial");
     return false;
@@ -120,7 +123,6 @@ void readBTSerial() {
       pwPrim = jsonBuffer["pwPrim"].as<String>();
       ssidSec = jsonBuffer["ssidSec"].as<String>();
       pwSec = jsonBuffer["pwSec"].as<String>();
-
       Preferences preferences;
       preferences.begin("WiFiCred", false);
       preferences.putString("ssidPrim", ssidPrim);
@@ -320,7 +322,7 @@ bool scanWiFi() {
    Start connection to AP
 */
 void connectWiFi() {
-
+  SerialBT.end();
   // Setup callback function for successful connection
   WiFi.onEvent(gotIP, SYSTEM_EVENT_STA_GOT_IP);
   // Setup callback function for lost connection
@@ -340,15 +342,15 @@ void connectWiFi() {
   Serial.print("Start connection to ");
   if (usePrimAP) {
     Serial.println(ssidPrim);
-    WiFi.setHostname("ljus-240AC46177C4");
+    WiFi.setHostname(apName);
     WiFi.begin(ssidPrim.c_str(), pwPrim.c_str());
-    WiFi.setHostname("ljus-240AC46177C4");
+    WiFi.setHostname(apName);
 
   } else {
     Serial.println(ssidSec);
-    WiFi.setHostname("ljus-240AC46177C4");
+    WiFi.setHostname(apName);
     WiFi.begin(ssidSec.c_str(), pwSec.c_str());
-    WiFi.setHostname("ljus-240AC46177C4");
+    WiFi.setHostname(apName);
 
   }
 }
@@ -359,8 +361,11 @@ void setup() {
   // Initialize Serial port
   Serial.begin(115200);
   // Send some device info
+
   Serial.print("Build: ");
   Serial.println(compileDate);
+  pinMode(relay_gpio, OUTPUT);
+
   Preferences preferences;
   preferences.begin("WiFiCred", false);
   bool hasPref = preferences.getBool("valid", false);
@@ -435,7 +440,12 @@ void setup() {
 }
 
 void loop() {
-  if (touchRead(32) <= 5) {
+  if(WiFi.status() != WL_CONNECTED && btSerialOn != true){
+    initBTSerial();
+  } else if(WiFi.status() == WL_CONNECTED && btSerialOn){
+      SerialBT.end();
+  }
+  if (touchRead(32) <= 1) {
     if (ledOn) {
       ledOn = false;
       delay(500);
@@ -446,8 +456,12 @@ void loop() {
   }
   if (ledOn) {
     digitalWrite(ONBOARD_LED, HIGH);
+        digitalWrite(relay_gpio, HIGH);
+
   } else {
     digitalWrite(ONBOARD_LED, LOW);
+        digitalWrite(relay_gpio, LOW);
+
   }
   if (connStatusChanged) {
     if (isConnected) {
